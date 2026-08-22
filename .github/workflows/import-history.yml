@@ -1,0 +1,94 @@
+name: Import verified project history
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - import/phases-1-5
+    paths:
+      - '.history-import/**'
+      - '.github/workflows/import-history.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out staging branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify critical bundle chunks
+        shell: bash
+        run: |
+          set -euo pipefail
+          verify_blob() {
+            local path="$1"
+            local expected="$2"
+            local actual
+            actual="$(git hash-object "$path")"
+            printf '%s  %s\n' "$actual" "$path"
+            test "$actual" = "$expected"
+          }
+
+          verify_blob .history-import/history.part.00.b64 c895636a769f6e09aed4fd88d30bc6cca35755a0
+          verify_blob .history-import/history.part.01.b64 32c65a8acc028a1f5d5bacf9c94c80c073af8107
+          verify_blob .history-import/history.part.02.b64 3963349d8f38f3deac36e557d691fea2d498baca
+          verify_blob .history-import/history.part.03.b64 b781eab2b61e60337063d92bce1d0557254fd188
+          verify_blob .history-import/history.part.04.b64 8f92803b9a3e32f577843c6f376921f63eaa2a91
+          verify_blob .history-import/v3.05.01.b64 3f2919dc9c2f695db0fcb3e55354673cd5a2a151
+          verify_blob .history-import/v3.07.01.b64 77f24d9d40a87ec0a22ab3b515d8142609d4a8b1
+          verify_blob .history-import/v3.08.00.b64 eefd1a5f0583d0c6ea1011a97d39731e3ecfcb07
+          verify_blob .history-import/v3.08.01.b64 5a7bee6931d0498f734e0d6ff96cec1a7ab416bd
+          verify_blob .history-import/v3.08.02.b64 8de785e7009ad6290935dc0b44d267836f8374df
+          verify_blob .history-import/v3.08.03.b64 9efdf06289a458118e4481d057faa6322b1bfd31
+
+      - name: Reconstruct and verify Git bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat \
+            .history-import/history.part.00.b64 \
+            .history-import/history.part.01.b64 \
+            .history-import/history.part.02.b64 \
+            .history-import/history.part.03.b64 \
+            .history-import/history.part.04.b64 \
+            .history-import/v2.05.00.b64 \
+            .history-import/v3.05.01.b64 \
+            .history-import/v2.05.02.b64 \
+            .history-import/v2.05.03.b64 \
+            .history-import/v2.06.00.b64 \
+            .history-import/v2.06.01.b64 \
+            .history-import/v2.06.02.b64 \
+            .history-import/v2.06.03.b64 \
+            .history-import/v2.07.00.b64 \
+            .history-import/v3.07.01.b64 \
+            .history-import/v2.07.02.b64 \
+            .history-import/v2.07.03.b64 \
+            .history-import/v3.08.00.b64 \
+            .history-import/v3.08.01.b64 \
+            .history-import/v3.08.02.b64 \
+            .history-import/v3.08.03.b64 \
+            > /tmp/history.bundle.b64
+          base64 --decode /tmp/history.bundle.b64 > /tmp/history.bundle
+          git bundle verify /tmp/history.bundle
+          git fetch /tmp/history.bundle \
+            refs/heads/main:refs/remotes/history/main \
+            refs/heads/feat/phase2-runtime-hardening:refs/remotes/history/phase2 \
+            refs/heads/feat/phase3-cache-pooling:refs/remotes/history/phase3 \
+            refs/heads/feat/phase4-native-intelligence:refs/remotes/history/phase4 \
+            refs/heads/feat/phase5-predictive-runtime:refs/remotes/history/phase5
+          test "$(git rev-parse refs/remotes/history/main)" = "aca7c097523d361248da9f9ad01cbeb19114c414"
+
+      - name: Publish verified refs
+        shell: bash
+        run: |
+          set -euo pipefail
+          git push origin refs/remotes/history/main:refs/heads/main --force
+          git push origin refs/remotes/history/phase2:refs/heads/feat/phase2-runtime-hardening --force
+          git push origin refs/remotes/history/phase3:refs/heads/feat/phase3-cache-pooling --force
+          git push origin refs/remotes/history/phase4:refs/heads/feat/phase4-native-intelligence --force
+          git push origin refs/remotes/history/phase5:refs/heads/feat/phase5-predictive-runtime --force
