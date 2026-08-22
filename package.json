@@ -1,6 +1,6 @@
 {
   "name": "react-native-fast-video",
-  "version": "0.0.6-alpha.0",
+  "version": "0.0.7-alpha.0",
   "description": "Performance-first native video runtime for React Native and Expo",
   "license": "MIT",
   "author": "Vivek JM",
@@ -28,6 +28,14 @@
   "types": "build/index.d.ts",
   "react-native": "src/index.ts",
   "source": "src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./build/index.d.ts",
+      "react-native": "./src/index.ts",
+      "default": "./build/index.js"
+    },
+    "./package.json": "./package.json"
+  },
   "sideEffects": false,
   "files": [
     "android",
@@ -46,16 +54,19 @@
     "build:lib": "tsc -p tsconfig.build.json",
     "build:plugin": "tsc -p plugin/tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p plugin/tsconfig.json --noEmit",
-    "test:core": "cmake -S cpp -B cpp/build -DRNFV_BUILD_TESTS=ON && cmake --build cpp/build --config Release && ctest --test-dir cpp/build --output-on-failure -C Release",
+    "test:core": "cmake -S cpp -B cpp/build -DRNFV_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release && cmake --build cpp/build --config Release --parallel && ctest --test-dir cpp/build --output-on-failure -C Release",
+    "test:contracts": "node --test tests/contracts/*.test.cjs",
     "benchmark:sample": "node benchmarks/gate.mjs benchmarks/results/sample.json",
-    "validate": "npm run audit && npm run typecheck && npm run test:core && npm run benchmark:sample",
-    "prepare": "npm run build",
-    "audit": "node scripts/source-audit.mjs",
     "benchmark:qoe": "node benchmarks/qoe-gate.mjs benchmarks/results/sample-phase4.json",
-    "validate:phase4": "npm run audit && npm run test:core && npm run benchmark:sample && npm run benchmark:qoe",
     "benchmark:predictive": "node benchmarks/predictive-gate.mjs benchmarks/results/sample-phase5.json",
     "benchmark:device-sample": "node benchmarks/device-gate.mjs benchmarks/results/sample-device.json",
-    "validate:phase5": "npm run audit && npm run test:core && npm run benchmark:sample && npm run benchmark:qoe && npm run benchmark:predictive && npm run benchmark:device-sample"
+    "audit": "node scripts/source-audit.mjs",
+    "audit:package": "node scripts/package-audit.mjs",
+    "validate": "npm run audit && npm run typecheck && npm run build && npm run test:contracts && npm run test:core && npm run benchmark:sample && npm run benchmark:qoe && npm run benchmark:predictive && npm run benchmark:device-sample && npm run audit:package",
+    "validate:phase4": "npm run audit && npm run test:core && npm run benchmark:sample && npm run benchmark:qoe",
+    "validate:phase5": "npm run validate",
+    "prepack": "npm run build && npm run audit:package",
+    "prepare": "npm run build"
   },
   "peerDependencies": {
     "expo-modules-core": ">=2.0.0",
@@ -64,14 +75,18 @@
   },
   "devDependencies": {
     "@expo/config-plugins": "^10.0.0",
+    "@types/node": "^24.0.0",
     "@types/react": "^19.0.0",
     "expo-modules-core": "^3.0.0",
     "react": "^19.0.0",
     "react-native": "^0.81.0",
-    "typescript": "^5.9.0",
-    "@types/node": "^24.0.0"
+    "typescript": "^5.9.0"
   },
   "engines": {
     "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   }
 }
