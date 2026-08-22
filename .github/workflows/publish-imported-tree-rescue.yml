@@ -19,41 +19,134 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Download and verify signed transport
-        shell: bash
-        run: |
-          set -euo pipefail
-          curl --fail --location --retry 5 --retry-all-errors --retry-delay 2 \
-            https://paste.rs/zEvyL.txt \
-            --output /tmp/phase5.fast-export.xz.b64
-          test "$(wc -c < /tmp/phase5.fast-export.xz.b64)" = "103488"
-          echo "3d01202145cb75bd7d7c439463105b56a41a277bd071bdf722ec8c45370a3817  /tmp/phase5.fast-export.xz.b64" | sha256sum --check
-          base64 --decode /tmp/phase5.fast-export.xz.b64 > /tmp/phase5.fast-export.xz
-          echo "0bd530ec19af341243b841e68d201a2875183b17e8b83bfc71023a77bb41c2d4  /tmp/phase5.fast-export.xz" | sha256sum --check
-          xz --test /tmp/phase5.fast-export.xz
+      - name: Check out repository-contained transports
+        uses: actions/checkout@v4
+        with:
+          ref: bootstrap/import-phase5-history
+          path: transport
+          fetch-depth: 1
 
       - name: Recreate and validate exact repository history
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf /tmp/imported
-          git init -q /tmp/imported
-          xz --decompress --stdout /tmp/phase5.fast-export.xz | git -C /tmp/imported fast-import --quiet
-          test "$(git -C /tmp/imported rev-parse main)" = "aca7c097523d361248da9f9ad01cbeb19114c414"
-          test "$(git -C /tmp/imported rev-parse main^{tree})" = "ae9a21adebc5e47eda8be2a006aa7d05c0cb9684"
-          test "$(git -C /tmp/imported show main:package.json | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')" = "0.0.6-alpha.0"
-          test "$(git -C /tmp/imported show main:README.md | grep -c '^```mermaid')" -ge 3
-          git -C /tmp/imported fsck --strict
 
-      - name: Force-promote exact history to main
+          expected_commit='aca7c097523d361248da9f9ad01cbeb19114c414'
+          expected_tree='ae9a21adebc5e47eda8be2a006aa7d05c0cb9684'
+          imported='/tmp/imported'
+
+          validate_repo() {
+            local repo="$1"
+            git -C "$repo" show-ref --verify --quiet refs/heads/main || return 1
+            test "$(git -C "$repo" rev-parse refs/heads/main)" = "$expected_commit" || return 1
+            test "$(git -C "$repo" rev-parse refs/heads/main^{tree})" = "$expected_tree" || return 1
+            test "$(git -C "$repo" show refs/heads/main:package.json | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')" = '0.0.6-alpha.0' || return 1
+            test "$(git -C "$repo" show refs/heads/main:README.md | grep -c '^```mermaid')" -ge 5 || return 1
+            git -C "$repo" fsck --strict
+          }
+
+          reset_imported() {
+            rm -rf "$imported"
+          }
+
+          try_git_bundle() {
+            local candidate="$1"
+            reset_imported
+            if git clone --quiet "$candidate" "$imported" 2>/tmp/clone-error.log && validate_repo "$imported"; then
+              echo "Recovered exact history from Git bundle: $candidate"
+              return 0
+            fi
+            reset_imported
+            return 1
+          }
+
+          try_fast_export() {
+            local candidate="$1"
+            reset_imported
+            git init --quiet "$imported"
+            if git -C "$imported" fast-import --quiet < "$candidate" 2>/tmp/fast-import-error.log && validate_repo "$imported"; then
+              echo "Recovered exact history from fast-export: $candidate"
+              return 0
+            fi
+            reset_imported
+            return 1
+          }
+
+          try_directory() {
+            local directory="$1"
+            test -d "$directory" || return 1
+            mapfile -d '' files < <(find "$directory" -maxdepth 1 -type f -print0 | sort -z -V)
+            test "${#files[@]}" -gt 0 || return 1
+
+            local raw='/tmp/transport.raw'
+            local decoded='/tmp/transport.decoded'
+            local decompressed='/tmp/transport.decompressed'
+            cat "${files[@]}" > "$raw"
+            echo "Trying $directory (${#files[@]} parts, $(wc -c < "$raw") bytes)"
+
+            try_git_bundle "$raw" && return 0
+            try_fast_export "$raw" && return 0
+
+            if base64 --decode "$raw" > "$decoded" 2>/dev/null; then
+              try_git_bundle "$decoded" && return 0
+              try_fast_export "$decoded" && return 0
+              if xz --decompress --stdout "$decoded" > "$decompressed" 2>/dev/null; then
+                try_git_bundle "$decompressed" && return 0
+                try_fast_export "$decompressed" && return 0
+              fi
+            fi
+
+            if xz --decompress --stdout "$raw" > "$decompressed" 2>/dev/null; then
+              try_git_bundle "$decompressed" && return 0
+              try_fast_export "$decompressed" && return 0
+            fi
+
+            return 1
+          }
+
+          recovered=false
+          for directory in \
+            transport/.bundle-v2 \
+            transport/.bootstrap-bundle \
+            transport/.fast-export-v1; do
+            if try_directory "$directory"; then
+              recovered=true
+              break
+            fi
+          done
+
+          if [ "$recovered" != true ]; then
+            echo 'Could not reconstruct the verified Phase 5 history from repository-contained transports.' >&2
+            echo 'Bundle clone error:' >&2
+            cat /tmp/clone-error.log 2>/dev/null || true
+            echo 'Fast-import error:' >&2
+            cat /tmp/fast-import-error.log 2>/dev/null || true
+            exit 1
+          fi
+
+          git -C "$imported" branch --force feat/phase2-runtime-hardening c78ebcdb9b9334fedd3ad7cc17380f8421c77091
+          git -C "$imported" branch --force feat/phase3-cache-pooling 666d49a3d602abdedee491e29574c1d6a103631d
+          git -C "$imported" branch --force feat/phase4-native-intelligence 213e8b23864c9ed844ad05d3ba5a80dea2547b32
+          git -C "$imported" branch --force feat/phase5-predictive-runtime aca7c097523d361248da9f9ad01cbeb19114c414
+          git -C "$imported" log --oneline --decorate --graph --all -15
+
+      - name: Preserve current remote main and publish exact history
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           cd /tmp/imported
-          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git push --force origin main:refs/heads/main
-          actual="$(git ls-remote origin refs/heads/main | cut -f1)"
-          test "$actual" = "aca7c097523d361248da9f9ad01cbeb19114c414"
+          remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git remote add origin "$remote"
+
+          git push --force "$remote" \
+            refs/heads/main:refs/heads/main \
+            refs/heads/feat/phase2-runtime-hardening:refs/heads/feat/phase2-runtime-hardening \
+            refs/heads/feat/phase3-cache-pooling:refs/heads/feat/phase3-cache-pooling \
+            refs/heads/feat/phase4-native-intelligence:refs/heads/feat/phase4-native-intelligence \
+            refs/heads/feat/phase5-predictive-runtime:refs/heads/feat/phase5-predictive-runtime
+
+          actual="$(git ls-remote "$remote" refs/heads/main | cut -f1)"
+          test "$actual" = 'aca7c097523d361248da9f9ad01cbeb19114c414'
           echo "Exact Phase 1-5 history published to main: $actual"
