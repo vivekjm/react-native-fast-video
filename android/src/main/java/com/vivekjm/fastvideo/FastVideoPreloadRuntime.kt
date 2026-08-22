@@ -24,12 +24,27 @@ import org.json.JSONObject
 internal object FastVideoPreloadRuntime {
   private const val DEFAULT_POOL_SIZE = 2
   private const val MAX_POOL_SIZE = 6
+  private const val DEFAULT_FORWARD_RADIUS = 4
+  private const val DEFAULT_BACKWARD_RADIUS = 2
 
   private class StatusControl : TargetPreloadStatusControl<Int, DefaultPreloadManager.PreloadStatus> {
     @Volatile var currentIndex: Int = 0
+    @Volatile private var direction: Int = 0
+    @Volatile private var forwardRadius: Int = DEFAULT_FORWARD_RADIUS
+    @Volatile private var backwardRadius: Int = DEFAULT_BACKWARD_RADIUS
+
+    fun update(index: Int, direction: Int, forwardRadius: Int, backwardRadius: Int) {
+      currentIndex = index
+      this.direction = direction.coerceIn(-1, 1)
+      this.forwardRadius = forwardRadius.coerceIn(1, 12)
+      this.backwardRadius = backwardRadius.coerceIn(0, 8)
+    }
 
     override fun getTargetPreloadStatus(index: Int): DefaultPreloadManager.PreloadStatus {
       val distance = index - currentIndex
+      if (!insideIntentWindow(distance)) {
+        return DefaultPreloadManager.PreloadStatus.PRELOAD_STATUS_NOT_PRELOADED
+      }
       return when (FastCoreNative.preloadStage(distance)) {
         4 -> DefaultPreloadManager.PreloadStatus.specifiedRangeCached(
           FastCoreNative.preloadDurationMs(distance)
@@ -40,6 +55,19 @@ internal object FastVideoPreloadRuntime {
         2 -> DefaultPreloadManager.PreloadStatus.PRELOAD_STATUS_TRACKS_SELECTED
         1 -> DefaultPreloadManager.PreloadStatus.PRELOAD_STATUS_SOURCE_PREPARED
         else -> DefaultPreloadManager.PreloadStatus.PRELOAD_STATUS_NOT_PRELOADED
+      }
+    }
+
+    private fun insideIntentWindow(distance: Int): Boolean {
+      if (distance == 0) return false
+      if (direction == 0) {
+        return distance in -maxOf(forwardRadius, backwardRadius)..maxOf(forwardRadius, backwardRadius)
+      }
+      val directedDistance = distance * direction
+      return if (directedDistance > 0) {
+        directedDistance <= forwardRadius
+      } else {
+        -directedDistance <= backwardRadius
       }
     }
   }
@@ -106,9 +134,7 @@ internal object FastVideoPreloadRuntime {
   fun acquirePlayer(context: Context, latencyMode: String): ExoPlayer {
     val runtime = ensure(context, latencyMode)
     runtime.pooledPlayers.pollFirst()?.let { return it }
-    return runtime.builder.buildExoPlayer(
-      ExoPlayer.Builder(runtime.context)
-    )
+    return runtime.builder.buildExoPlayer(ExoPlayer.Builder(runtime.context))
   }
 
   @Synchronized
@@ -130,6 +156,7 @@ internal object FastVideoPreloadRuntime {
       .buildUpon()
       .clearOverrides()
       .setMaxVideoBitrate(Int.MAX_VALUE)
+      .setMaxVideoSize(Int.MAX_VALUE, Int.MAX_VALUE)
       .setPreferredAudioLanguage(null)
       .setPreferredTextLanguage(null)
       .build()
@@ -147,7 +174,12 @@ internal object FastVideoPreloadRuntime {
       runtime.itemsByIndex.clear()
 
       modeSources.forEachIndexed { fallbackIndex, source ->
-        if (source.uri.isBlank() || source.headers.isNotEmpty() || source.drm != null || source.subtitles.isNotEmpty()) {
+        if (
+          source.uri.isBlank() ||
+          source.headers.isNotEmpty() ||
+          source.drm != null ||
+          source.subtitles.isNotEmpty()
+        ) {
           return@forEachIndexed
         }
         val index = source.preloadIndex ?: fallbackIndex
@@ -158,11 +190,12 @@ internal object FastVideoPreloadRuntime {
         accepted += 1
       }
 
-      runtime.control.currentIndex = currentIndex
+      runtime.control.update(currentIndex, 0, DEFAULT_FORWARD_RADIUS, DEFAULT_BACKWARD_RADIUS)
       runtime.manager.setCurrentPlayingIndex(currentIndex)
       runtime.manager.invalidate()
     }
 
+    previousFocusIndex = currentIndex
     return accepted
   }
 
@@ -180,17 +213,41 @@ internal object FastVideoPreloadRuntime {
     if (index == null || index < 0) return emptyMap()
     val itemCount = (runtimes.values.flatMap { it.itemsByIndex.keys }.maxOrNull() ?: index) + 1
     val intent = runCatching {
-      val json = JSONObject(FastCoreNative.viewportIntent(index, previousFocusIndex, itemCount, velocityItemsPerSecond))
-      json.keys().asSequence().associateWith { key -> json.opt(key).takeUnless { it === JSONObject.NULL } }
+      val json = JSONObject(
+        FastCoreNative.viewportIntent(index, previousFocusIndex, itemCount, velocityItemsPerSecond)
+      )
+      json.keys().asSequence().associateWith { key ->
+        json.opt(key).takeUnless { it === JSONObject.NULL }
+      }
     }.getOrDefault(emptyMap())
-    val predicted = (intent["predictedIndex"] as? Number)?.toInt()?.coerceIn(0, maxOf(0, itemCount - 1)) ?: index
+
+    val predicted = (intent["predictedIndex"] as? Number)
+      ?.toInt()
+      ?.coerceIn(0, maxOf(0, itemCount - 1))
+      ?: index
+    val direction = (intent["direction"] as? Number)?.toInt()?.coerceIn(-1, 1)
+      ?: (index - previousFocusIndex).coerceIn(-1, 1)
+    val forwardRadius = (intent["forwardRadius"] as? Number)
+      ?.toInt()
+      ?.coerceIn(1, 12)
+      ?: DEFAULT_FORWARD_RADIUS
+    val backwardRadius = (intent["backwardRadius"] as? Number)
+      ?.toInt()
+      ?.coerceIn(0, 8)
+      ?: DEFAULT_BACKWARD_RADIUS
+
     previousFocusIndex = index
     runtimes.values.forEach { runtime ->
-      runtime.control.currentIndex = predicted
+      runtime.control.update(predicted, direction, forwardRadius, backwardRadius)
       runtime.manager.setCurrentPlayingIndex(index)
       runtime.manager.invalidate()
     }
-    return intent + mapOf("actualIndex" to index)
+    return intent + mapOf(
+      "actualIndex" to index,
+      "appliedDirection" to direction,
+      "appliedForwardRadius" to forwardRadius,
+      "appliedBackwardRadius" to backwardRadius
+    )
   }
 
   @Synchronized
@@ -206,6 +263,7 @@ internal object FastVideoPreloadRuntime {
     runtimes.values.forEach { runtime ->
       runtime.manager.reset()
       runtime.itemsByIndex.clear()
+      runtime.control.update(0, 0, DEFAULT_FORWARD_RADIUS, DEFAULT_BACKWARD_RADIUS)
     }
   }
 
