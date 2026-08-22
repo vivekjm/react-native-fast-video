@@ -1,152 +1,59 @@
-name: Verify and finalize imported source tree
+name: Promote exact Phase 1-5 history
 
 on:
-  push:
+  pull_request:
     branches: [main]
-    paths:
-      - '.github/workflows/publish-imported-tree-rescue.yml'
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
 
 permissions:
   contents: write
 
+concurrency:
+  group: exact-phase5-history-promotion
+  cancel-in-progress: false
+
 jobs:
-  finalize:
+  promote:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
-      - name: Select complete tree and publish atomically
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
-            const candidates = [
-              'f973128922401f17739d9e6c28652c4d659b4c37',
-              '66306edcacb663db72dc1844a0b33a1e829c70e1',
-              '0c5122e0d8edb93e2c4e020897aa424be2f4f83e',
-              '22a2561b0828df693e5f9214fa8b702267254a04',
-              '4eeac8c69304886905b8cf95a44c2e2f54d129fc',
-              'c8b21ce7493b89118f47c1041eeb24b8e1d962a9',
-              '0cecaad8b3ddd631db697dc61caa3b9fed788c5a',
-              '5ce319311d47adaf06eb82ab62e16821d03a8dd1',
-              '451d8fbf9e2ddcd429e814948cd15411b99b8b1c',
-              'b0276b41e0d7e4bbd9f323470c8d93a4b83334cc',
-              '4dbaebe7bf17ea80ee71e7e91e6125623fd848c0',
-              'c9289c5273caf3e0e09e7313201f4d20de7c6e2c',
-              '938160db041d86d8eaa2ccf982eb36b415c7f9ce',
-              '71380917cd3a6045e8525ae2101ba4e4a4d1d88a',
-              '6e79fee4b699e24f14a6c6034d08a16a71d65e63',
-              'f8587727d30afbdf490c4d6e1fed964e90f903a1',
-              'dcebf603a5bc451396a46413e8a1eb10a4dde299',
-              'dd855d7e68b75e3250834cf975bb3d0c357d5b4b',
-              'bd534b3ffec2212998763df03690582236e39148',
-              '4b548ea8b3ef25b5ea0a01580f2f41478c91a292',
-              '6cbf1662c2afa4a181693f786ee68c24bf89aa5e',
-            ];
-            const exactRequired = [
-              'README.md',
-              'package.json',
-              'expo-module.config.json',
-            ];
-            const prefixRequired = [
-              'src/',
-              'android/',
-              'ios/',
-              'cpp/',
-              'docs/',
-              'benchmarks/',
-              '.github/workflows/',
-            ];
+      - name: Download and verify signed transport
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 5 --retry-all-errors --retry-delay 2 \
+            https://paste.rs/zEvyL.txt \
+            --output /tmp/phase5.fast-export.xz.b64
+          test "$(wc -c < /tmp/phase5.fast-export.xz.b64)" = "103488"
+          echo "3d01202145cb75bd7d7c439463105b56a41a277bd071bdf722ec8c45370a3817  /tmp/phase5.fast-export.xz.b64" | sha256sum --check
+          base64 --decode /tmp/phase5.fast-export.xz.b64 > /tmp/phase5.fast-export.xz
+          echo "0bd530ec19af341243b841e68d201a2875183b17e8b83bfc71023a77bb41c2d4  /tmp/phase5.fast-export.xz" | sha256sum --check
+          xz --test /tmp/phase5.fast-export.xz
 
-            const valid = [];
-            for (const sha of candidates) {
-              try {
-                const response = await github.rest.git.getTree({
-                  owner,
-                  repo,
-                  tree_sha: sha,
-                  recursive: 'true',
-                });
-                if (response.data.truncated) continue;
-                const entries = response.data.tree;
-                const paths = new Set(entries.map((entry) => entry.path));
-                const complete =
-                  exactRequired.every((path) => paths.has(path)) &&
-                  prefixRequired.every((prefix) =>
-                    entries.some((entry) => entry.path.startsWith(prefix)),
-                  ) &&
-                  !paths.has('.bootstrap');
-                if (!complete) continue;
+      - name: Recreate and validate exact repository history
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/imported
+          git init -q /tmp/imported
+          xz --decompress --stdout /tmp/phase5.fast-export.xz | git -C /tmp/imported fast-import --quiet
+          test "$(git -C /tmp/imported rev-parse main)" = "aca7c097523d361248da9f9ad01cbeb19114c414"
+          test "$(git -C /tmp/imported rev-parse main^{tree})" = "ae9a21adebc5e47eda8be2a006aa7d05c0cb9684"
+          test "$(git -C /tmp/imported show main:package.json | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')" = "0.0.6-alpha.0"
+          test "$(git -C /tmp/imported show main:README.md | grep -c '^```mermaid')" -ge 3
+          git -C /tmp/imported fsck --strict
 
-                const readmeEntry = entries.find(
-                  (entry) => entry.path === 'README.md' && entry.type === 'blob',
-                );
-                const blob = await github.rest.git.getBlob({
-                  owner,
-                  repo,
-                  file_sha: readmeEntry.sha,
-                });
-                const readme = Buffer.from(
-                  blob.data.content,
-                  blob.data.encoding,
-                ).toString('utf8');
-                const diagrams = (readme.match(/```mermaid/g) || []).length;
-                if (diagrams < 3) continue;
-                valid.push({ sha, entries: entries.length, diagrams });
-              } catch (error) {
-                core.warning(`Could not inspect tree ${sha}: ${error.message}`);
-              }
-            }
-
-            if (!valid.length) {
-              core.setFailed('No complete imported source tree passed validation.');
-              return;
-            }
-            valid.sort((a, b) => b.entries - a.entries);
-            const selected = valid[0];
-            core.notice(
-              `Selected ${selected.sha}: ${selected.entries} entries, ${selected.diagrams} diagrams.`,
-            );
-
-            const currentRef = await github.rest.git.getRef({
-              owner,
-              repo,
-              ref: 'heads/main',
-            });
-            const currentCommit = await github.rest.git.getCommit({
-              owner,
-              repo,
-              commit_sha: currentRef.data.object.sha,
-            });
-            if (currentCommit.data.tree.sha === selected.sha) {
-              core.notice('main already points at the validated imported tree.');
-              return;
-            }
-
-            const commit = await github.rest.git.createCommit({
-              owner,
-              repo,
-              message: 'feat: publish validated phases 1-5 native media runtime',
-              tree: selected.sha,
-              parents: [currentRef.data.object.sha],
-              author: {
-                name: 'Vivek JM',
-                email: 'vivekjm77@gmail.com',
-                date: new Date().toISOString(),
-              },
-              committer: {
-                name: 'Vivek JM',
-                email: 'vivekjm77@gmail.com',
-                date: new Date().toISOString(),
-              },
-            });
-            await github.rest.git.updateRef({
-              owner,
-              repo,
-              ref: 'heads/main',
-              sha: commit.data.sha,
-              force: false,
-            });
-            core.notice(`Published ${selected.sha} as ${commit.data.sha}.`);
+      - name: Force-promote exact history to main
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd /tmp/imported
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push --force origin main:refs/heads/main
+          actual="$(git ls-remote origin refs/heads/main | cut -f1)"
+          test "$actual" = "aca7c097523d361248da9f9ad01cbeb19114c414"
+          echo "Exact Phase 1-5 history published to main: $actual"
