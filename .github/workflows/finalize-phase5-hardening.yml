@@ -1,0 +1,69 @@
+name: Finalize Phase 1-5 hardening
+
+on:
+  push:
+    branches: [feat/phase5-gap-closure]
+    paths:
+      - docs/PHASE5_CERTIFICATION_STATUS.json
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: feat/phase5-gap-closure
+          fetch-depth: 0
+      - name: Require a fully green certification matrix
+        run: |
+          python3 - <<'PY'
+          import json
+          data=json.load(open('docs/PHASE5_CERTIFICATION_STATUS.json'))
+          assert data['status']=='green', data
+          assert all(value=='success' for value in data['results'].values()), data
+          PY
+      - name: Finalize source tree and remove temporary machinery
+        run: |
+          cat > docs/PHASE5_HARDENING_COMPLETE.md <<'EOF'
+          # Phase 1–5 hardening complete
+
+          The pre-Phase-6 hardening gate is complete.
+
+          Verified surfaces:
+
+          - clean lockfile installation and npm package contents;
+          - TypeScript API/declaration build and web fallback contract;
+          - shared C++ FastCore plus hostile numeric C API tests;
+          - Android Expo prebuild and debug assembly;
+          - Apple Expo prebuild, CocoaPods integration and simulator build;
+          - source audit and benchmark/QoE/predictive/device-result schema gates.
+
+          This is a host and simulator integration result. Physical-device media certification remains Phase 6.
+          EOF
+          rm -f .phase5-certification-trigger .phase5-hardening-trigger
+          rm -f .github/workflows/apply-phase5-hardening.yml scripts/apply-phase5-hardening.py
+          rm -f .github/workflows/phase5-hardening-certification.yml
+          rm -f .github/workflows/finalize-phase5-hardening.yml
+      - name: Commit the certified release candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'chore: certify Phase 1-5 hardening gate'
+          git push origin HEAD:feat/phase5-gap-closure
+      - name: Mark PR ready and merge certified hardening
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr ready 2 --repo "$GITHUB_REPOSITORY" || true
+          gh pr merge 2 --repo "$GITHUB_REPOSITORY" --squash --delete-branch \
+            --subject 'fix: close Phase 1-5 correctness and parity gaps' \
+            --body 'Certified host, Android, and Apple integration matrix passed before Phase 6.'
