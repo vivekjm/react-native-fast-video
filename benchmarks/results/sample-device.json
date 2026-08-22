@@ -1,0 +1,18 @@
+{
+  "device": "sample-only-not-a-real-device-result",
+  "budgets": {
+    "maxColdTtffP50Ms": 1200,
+    "maxWarmTtffP50Ms": 550,
+    "maxWarmVsColdRatio": 0.65,
+    "maxRebufferRatio": 0.02,
+    "maxDroppedFrameRatio": 0.015,
+    "minQoeP50": 82
+  },
+  "metrics": {
+    "coldTtffP50Ms": 960,
+    "warmTtffP50Ms": 390,
+    "rebufferRatio": 0.006,
+    "droppedFrameRatio": 0.004,
+    "qoeP50": 91
+  }
+}

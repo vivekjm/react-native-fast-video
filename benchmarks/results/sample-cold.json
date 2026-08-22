@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "metadata": {
+    "device": "synthetic-ci",
+    "os": "host",
+    "buildSha": "sample",
+    "fixtureId": "feed-startup-sample",
+    "scenario": "network-vod",
+    "runs": 20,
+    "cacheState": "cold",
+    "synthetic": true
+  },
+  "metrics": {
+    "ttffP50Ms": 800,
+    "ttffP95Ms": 1500,
+    "seekP95Ms": 450,
+    "droppedFrameRatioMax": 0.002,
+    "rebufferRatioMax": 0.001,
+    "nativeToJsEventsPerSecondMax": 4
+  }
+}

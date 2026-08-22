@@ -1,0 +1,19 @@
+{
+  "platforms": [
+    "apple",
+    "android"
+  ],
+  "apple": {
+    "modules": [
+      "ReactNativeFastVideoModule"
+    ],
+    "appDelegateSubscribers": [
+      "FastVideoAppDelegateSubscriber"
+    ]
+  },
+  "android": {
+    "modules": [
+      "com.vivekjm.fastvideo.ReactNativeFastVideoModule"
+    ]
+  }
+}

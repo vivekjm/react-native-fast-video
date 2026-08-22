@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "budgets": {
+    "local-progressive": {
+      "ttffP50Ms": 350,
+      "ttffP95Ms": 800,
+      "seekP95Ms": 300,
+      "droppedFrameRatioMax": 0.01,
+      "rebufferRatioMax": 0.001,
+      "nativeToJsEventsPerSecondMax": 8
+    },
+    "network-vod": {
+      "ttffP50Ms": 900,
+      "ttffP95Ms": 1800,
+      "seekP95Ms": 700,
+      "droppedFrameRatioMax": 0.015,
+      "rebufferRatioMax": 0.005,
+      "nativeToJsEventsPerSecondMax": 8
+    },
+    "live-low-latency": {
+      "ttffP50Ms": 1200,
+      "ttffP95Ms": 2500,
+      "liveOffsetP95Ms": 5000,
+      "droppedFrameRatioMax": 0.02,
+      "rebufferRatioMax": 0.01,
+      "nativeToJsEventsPerSecondMax": 8
+    }
+  }
+}

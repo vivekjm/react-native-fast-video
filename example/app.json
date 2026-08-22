@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "Fast Video Lab",
+    "slug": "react-native-fast-video-example",
+    "version": "1.0.0",
+    "orientation": "default",
+    "userInterfaceStyle": "dark",
+    "plugins": [
+      [
+        "react-native-fast-video",
+        {
+          "supportsPictureInPicture": true,
+          "backgroundPlayback": true
+        }
+      ]
+    ],
+    "android": {
+      "package": "com.vivekjm.fastvideo.example"
+    },
+    "ios": {
+      "bundleIdentifier": "com.vivekjm.fastvideo.example",
+      "supportsTablet": true
+    }
+  }
+}

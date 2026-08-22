@@ -1,0 +1,24 @@
+{
+  "name": "react-native-fast-video-example",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.js",
+  "scripts": {
+    "start": "expo start --dev-client",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "prebuild": "expo prebuild"
+  },
+  "dependencies": {
+    "expo": "^57.0.0",
+    "expo-dev-client": "^7.0.0",
+    "expo-modules-core": "^3.0.0",
+    "react": "^19.1.0",
+    "react-native": "^0.82.1",
+    "react-native-fast-video": "file:.."
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "typescript": "^5.9.0"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 2,
+  "metadata": {
+    "device": "synthetic-ci",
+    "os": "host",
+    "buildSha": "sample-phase4",
+    "fixtureId": "adaptive-network-vod",
+    "scenario": "network-vod",
+    "runs": 30,
+    "cacheState": "mixed",
+    "networkProfile": "synthetic-wifi",
+    "thermalState": "nominal",
+    "synthetic": true
+  },
+  "metrics": {
+    "ttffP50Ms": 420,
+    "ttffP95Ms": 850,
+    "seekP95Ms": 360,
+    "droppedFrameRatioMax": 0.003,
+    "rebufferRatioMax": 0.002,
+    "nativeToJsEventsPerSecondMax": 4,
+    "qoeScoreP50": 91
+  }
+}

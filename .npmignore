@@ -1,0 +1,5 @@
+.github/
+benchmarks/results/
+cpp/tests/
+example/
+*.log

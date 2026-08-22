@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "metadata": {
+    "device": "synthetic-ci",
+    "os": "host",
+    "buildSha": "sample",
+    "fixtureId": "sample-no-media",
+    "scenario": "local-progressive",
+    "runs": 20,
+    "synthetic": true
+  },
+  "metrics": {
+    "ttffP50Ms": 120,
+    "ttffP95Ms": 250,
+    "seekP95Ms": 90,
+    "droppedFrameRatioMax": 0,
+    "rebufferRatioMax": 0,
+    "nativeToJsEventsPerSecondMax": 4
+  }
+}

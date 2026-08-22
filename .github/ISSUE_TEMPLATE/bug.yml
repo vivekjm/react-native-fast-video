@@ -1,0 +1,38 @@
+name: Bug report
+description: Report a reproducible playback or integration defect
+title: "[bug] "
+labels: [bug]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Package version / commit
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Device, OS, React Native and Expo versions
+    validations:
+      required: true
+  - type: textarea
+    id: source
+    attributes:
+      label: Stream type and sanitized source details
+      description: Never paste DRM secrets or private signed URLs.
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+    validations:
+      required: true
+  - type: textarea
+    id: metrics
+    attributes:
+      label: Native events and metrics

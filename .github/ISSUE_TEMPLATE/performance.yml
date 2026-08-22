@@ -1,0 +1,27 @@
+name: Performance report
+description: Submit a reproducible performance regression or result
+title: "[performance] "
+labels: [performance]
+body:
+  - type: textarea
+    id: device
+    attributes:
+      label: Device, OS, thermal state and power mode
+    validations:
+      required: true
+  - type: textarea
+    id: scenario
+    attributes:
+      label: Fixture, network shaping, cache state and run count
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Raw result JSON or link to artifact
+    validations:
+      required: true
+  - type: textarea
+    id: comparison
+    attributes:
+      label: Comparison configuration and versions

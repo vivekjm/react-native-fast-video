@@ -1,0 +1,77 @@
+{
+  "name": "react-native-fast-video",
+  "version": "0.0.6-alpha.0",
+  "description": "Performance-first native video runtime for React Native and Expo",
+  "license": "MIT",
+  "author": "Vivek JM",
+  "homepage": "https://github.com/vivekjm/react-native-fast-video#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vivekjm/react-native-fast-video.git"
+  },
+  "bugs": {
+    "url": "https://github.com/vivekjm/react-native-fast-video/issues"
+  },
+  "keywords": [
+    "react-native",
+    "expo",
+    "video",
+    "player",
+    "media3",
+    "avfoundation",
+    "hls",
+    "dash",
+    "hdr",
+    "cpp"
+  ],
+  "main": "build/index.js",
+  "types": "build/index.d.ts",
+  "react-native": "src/index.ts",
+  "source": "src/index.ts",
+  "sideEffects": false,
+  "files": [
+    "android",
+    "ios",
+    "cpp",
+    "src",
+    "build",
+    "plugin/build",
+    "app.plugin.js",
+    "expo-module.config.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "npm run build:lib && npm run build:plugin",
+    "build:lib": "tsc -p tsconfig.build.json",
+    "build:plugin": "tsc -p plugin/tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p plugin/tsconfig.json --noEmit",
+    "test:core": "cmake -S cpp -B cpp/build -DRNFV_BUILD_TESTS=ON && cmake --build cpp/build --config Release && ctest --test-dir cpp/build --output-on-failure -C Release",
+    "benchmark:sample": "node benchmarks/gate.mjs benchmarks/results/sample.json",
+    "validate": "npm run audit && npm run typecheck && npm run test:core && npm run benchmark:sample",
+    "prepare": "npm run build",
+    "audit": "node scripts/source-audit.mjs",
+    "benchmark:qoe": "node benchmarks/qoe-gate.mjs benchmarks/results/sample-phase4.json",
+    "validate:phase4": "npm run audit && npm run test:core && npm run benchmark:sample && npm run benchmark:qoe",
+    "benchmark:predictive": "node benchmarks/predictive-gate.mjs benchmarks/results/sample-phase5.json",
+    "benchmark:device-sample": "node benchmarks/device-gate.mjs benchmarks/results/sample-device.json",
+    "validate:phase5": "npm run audit && npm run test:core && npm run benchmark:sample && npm run benchmark:qoe && npm run benchmark:predictive && npm run benchmark:device-sample"
+  },
+  "peerDependencies": {
+    "expo-modules-core": ">=2.0.0",
+    "react": ">=18.2.0",
+    "react-native": ">=0.76.0"
+  },
+  "devDependencies": {
+    "@expo/config-plugins": "^10.0.0",
+    "@types/react": "^19.0.0",
+    "expo-modules-core": "^3.0.0",
+    "react": "^19.0.0",
+    "react-native": "^0.81.0",
+    "typescript": "^5.9.0",
+    "@types/node": "^24.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

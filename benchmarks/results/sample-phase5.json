@@ -1,0 +1,7 @@
+{
+  "bandwidthConfidence": 0.81,
+  "bandwidthVolatility": 0.17,
+  "averageFrameProcessingOffsetUs": 2180,
+  "viewportIntent": { "actualIndex": 8, "predictedIndex": 11, "forwardRadius": 4, "backwardRadius": 1, "confidence": 0.79 },
+  "cdn": { "primaryScore": 91.4, "degradedScore": 42.8 }
+}
