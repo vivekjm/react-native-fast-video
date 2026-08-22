@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.0.7-alpha.0 — Phase 1–5 gap closure
+
+- Replaced the removed Expo native-view API with `requireNativeViewManager`.
+- Rebuilt the browser fallback around native DOM PiP listeners, complete first-frame payloads, and full metric snapshots.
+- Added strict source, URI, header, retry, subtitle, DRM, metadata, and fallback normalization.
+- Made Android and Apple native view props/events explicitly symmetrical.
+- Applied FastCore viewport direction and asymmetric forward/back radii in both native preloaders.
+- Added persisted Android offline-header resolution for manifest and segment requests.
+- Moved Android offline completion-index I/O off the UI thread and hardened adaptive/progressive DownloadRequest construction.
+- Added duplicate-ID, package-existence, interrupted-task, and relaunch reconciliation to Apple offline downloads.
+- Added publish-surface checks, contract tests, C++ adversarial tests, sanitizer CI, Android compile/lint, and full iOS simulator compilation.
+- Added package exports, reproducible dependency locking, and canonical repository audits.
+- Kept offline Widevine/FairPlay license persistence and Cast explicitly outside this release boundary for Phase 6.
+
 ## 0.0.6-alpha.0 — Phase 5 predictive runtime
 
 - Added stateful FastCore bandwidth forecasting with confidence and volatility.
