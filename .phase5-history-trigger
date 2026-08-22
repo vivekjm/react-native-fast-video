@@ -1,3 +1,5 @@
-Trigger the verified Phase 1-5 exact-history promotion workflow.
-Expected main: aca7c097523d361248da9f9ad01cbeb19114c414
+Trigger exact Phase 1–5 history promotion from repository-contained transports.
+
+Expected commit: aca7c097523d361248da9f9ad01cbeb19114c414
 Expected tree: ae9a21adebc5e47eda8be2a006aa7d05c0cb9684
+Retry: repository transport importer after rename
