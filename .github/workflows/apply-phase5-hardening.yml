@@ -1,0 +1,68 @@
+name: Apply Phase 1-5 hardening closure
+
+on:
+  push:
+    branches: [feat/phase5-gap-closure]
+    paths:
+      - scripts/apply-phase5-hardening.py
+      - .github/workflows/apply-phase5-hardening.yml
+      - .phase5-hardening-trigger
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: phase5-gap-closure-writer
+  cancel-in-progress: false
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: feat/phase5-gap-closure
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Apply idempotent hardening transforms
+        run: python3 scripts/apply-phase5-hardening.py
+      - name: Generate reproducible lockfile
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Install from lockfile
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: TypeScript and package contracts
+        run: |
+          npm run audit
+          npm run typecheck
+          npm run build
+          npm run test:contracts
+          npm run pack:check
+      - name: FastCore and benchmark gates
+        run: |
+          npm run test:core
+          npm run benchmark:sample
+          npm run benchmark:qoe
+          npm run benchmark:predictive
+          npm run benchmark:device-sample
+      - name: Commit verified closure set
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No hardening changes remained to commit."
+            exit 0
+          fi
+          git commit -m "fix: close Phase 1-5 correctness and parity gaps"
+          git push origin HEAD:feat/phase5-gap-closure
