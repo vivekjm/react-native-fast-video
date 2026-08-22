@@ -43,7 +43,6 @@ class FastVideoView(
   }
   private var renderView: View? = null
   private var surfaceType: String = "surface"
-  private var contentFit: String = "contain"
   private var engine: FastVideoEngine? = null
   private var source: FastVideoSource? = null
   private var latencyMode: String = "balanced"
@@ -62,7 +61,10 @@ class FastVideoView(
   init {
     addView(
       aspectFrame,
-      FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+      FrameLayout.LayoutParams(
+        FrameLayout.LayoutParams.MATCH_PARENT,
+        FrameLayout.LayoutParams.MATCH_PARENT
+      )
     )
     replaceRenderView()
   }
@@ -73,6 +75,13 @@ class FastVideoView(
     if (value == null || value.uri.isBlank()) {
       engine?.release()
       engine = null
+      return
+    }
+
+    compatibilityError(value)?.let { error ->
+      engine?.release()
+      engine = null
+      emitError(error.first, error.second, error.third)
       return
     }
     loadCurrentSource()
@@ -137,11 +146,10 @@ class FastVideoView(
   }
 
   fun setContentFit(value: String) {
-    contentFit = value
     aspectFrame.resizeMode = when (value) {
       "cover" -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
       "fill" -> AspectRatioFrameLayout.RESIZE_MODE_FILL
-      "none" -> AspectRatioFrameLayout.RESIZE_MODE_FIXED_WIDTH
+      "none" -> AspectRatioFrameLayout.RESIZE_MODE_FIT
       else -> AspectRatioFrameLayout.RESIZE_MODE_FIT
     }
   }
@@ -177,6 +185,9 @@ class FastVideoView(
     val height = measuredHeight.coerceAtLeast(1)
     val params = PictureInPictureParams.Builder()
       .setAspectRatio(Rational(width, height))
+      .apply {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) setAutoEnterEnabled(true)
+      }
       .build()
     val entered = activity.enterPictureInPictureMode(params)
     if (entered) onPictureInPictureChange(mapOf("active" to true))
@@ -189,6 +200,25 @@ class FastVideoView(
     detachSurface(engine)
     engine?.release(preserveForBackground = source?.mediaSession == true)
     engine = null
+  }
+
+  private fun compatibilityError(source: FastVideoSource): Triple<String, String, String?>? {
+    val drm = source.drm ?: return null
+    if (!drm.type.equals("widevine", ignoreCase = true)) {
+      return Triple(
+        "E_UNSUPPORTED_DRM",
+        "Android playback supports Widevine DRM. Use FairPlay only on Apple sources.",
+        drm.type
+      )
+    }
+    if (!drm.licenseResponseType.equals("raw", ignoreCase = true)) {
+      return Triple(
+        "E_UNSUPPORTED_DRM_RESPONSE",
+        "Media3 Widevine playback requires a raw binary license response.",
+        drm.licenseResponseType
+      )
+    }
+    return null
   }
 
   private fun loadCurrentSource() {
@@ -206,6 +236,10 @@ class FastVideoView(
     old?.release()
     engine = null
     val item = source ?: return
+    compatibilityError(item)?.let { error ->
+      emitError(error.first, error.second, error.third)
+      return
+    }
     createEngine().load(item, autoplay || !paused)
   }
 
@@ -234,11 +268,19 @@ class FastVideoView(
     val nextRenderView: View = if (surfaceType == "texture") {
       TextureView(context).also { texture ->
         texture.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-          override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
+          override fun onSurfaceTextureAvailable(
+            surface: SurfaceTexture,
+            width: Int,
+            height: Int
+          ) {
             engine?.player?.setVideoTextureView(texture)
           }
 
-          override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) = Unit
+          override fun onSurfaceTextureSizeChanged(
+            surface: SurfaceTexture,
+            width: Int,
+            height: Int
+          ) = Unit
 
           override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
             engine?.player?.clearVideoTextureView(texture)
@@ -255,7 +297,12 @@ class FastVideoView(
             engine?.player?.setVideoSurfaceView(surface)
           }
 
-          override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) = Unit
+          override fun surfaceChanged(
+            holder: SurfaceHolder,
+            format: Int,
+            width: Int,
+            height: Int
+          ) = Unit
 
           override fun surfaceDestroyed(holder: SurfaceHolder) {
             engine?.player?.clearVideoSurfaceView(surface)
@@ -267,7 +314,10 @@ class FastVideoView(
     renderView = nextRenderView
     aspectFrame.addView(
       nextRenderView,
-      FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+      FrameLayout.LayoutParams(
+        FrameLayout.LayoutParams.MATCH_PARENT,
+        FrameLayout.LayoutParams.MATCH_PARENT
+      )
     )
     attachSurface(engine)
   }
@@ -276,7 +326,9 @@ class FastVideoView(
     val view = renderView ?: return
     val player = target?.player ?: return
     when (view) {
-      is SurfaceView -> if (view.holder.surface?.isValid == true) player.setVideoSurfaceView(view)
+      is SurfaceView -> if (view.holder.surface?.isValid == true) {
+        player.setVideoSurfaceView(view)
+      }
       is TextureView -> if (view.isAvailable) player.setVideoTextureView(view)
     }
   }
