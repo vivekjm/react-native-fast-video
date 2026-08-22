@@ -8,7 +8,7 @@ import {
   type RefObject,
 } from 'react';
 import type { NativeSyntheticEvent, ViewProps } from 'react-native';
-import { requireNativeView } from 'expo-modules-core';
+import { requireNativeViewManager } from 'expo-modules-core';
 
 import type {
   FastVideoError,
@@ -56,7 +56,11 @@ interface NativeFastVideoProps extends ViewProps {
   onReady?: EventHandler<{ durationMs: number; isLive: boolean }>;
   onPlaybackStateChange?: EventHandler<{ state: FastVideoMetrics['state'] }>;
   onBuffer?: EventHandler<{ buffering: boolean }>;
-  onFirstFrame?: EventHandler<{ timestampMs: number; timeToFirstFrameMs: number; startupPath: string }>;
+  onFirstFrame?: EventHandler<{
+    timestampMs: number;
+    timeToFirstFrameMs: number;
+    startupPath: string;
+  }>;
   onProgress?: EventHandler<FastVideoProgress>;
   onMetrics?: EventHandler<FastVideoMetrics>;
   onAdaptiveDecision?: EventHandler<Record<string, unknown>>;
@@ -67,10 +71,7 @@ interface NativeFastVideoProps extends ViewProps {
   onPictureInPictureChange?: EventHandler<{ active: boolean }>;
 }
 
-const NativeFastVideo = requireNativeView<NativeFastVideoProps>(
-  'ReactNativeFastVideo',
-  'FastVideoView'
-);
+const NativeFastVideo = requireNativeViewManager<NativeFastVideoProps>('ReactNativeFastVideo');
 
 function FastVideoComponent(
   props: FastVideoProps,
@@ -103,7 +104,7 @@ function FastVideoComponent(
 
   return (
     <NativeFastVideo
-      ref={nativeRef as any}
+      ref={nativeRef as Ref<NativeFastVideoRef>}
       style={props.style}
       testID={props.testID}
       accessible={props.accessible}
