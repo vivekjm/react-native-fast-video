@@ -11,14 +11,14 @@
   },
   "dependencies": {
     "expo": "^57.0.0",
-    "expo-dev-client": "^7.0.0",
-    "expo-modules-core": "^3.0.0",
-    "react": "^19.1.0",
-    "react-native": "^0.82.1",
+    "expo-dev-client": "^57.0.0",
+    "expo-modules-core": "~57.0.12",
+    "react": "19.2.3",
+    "react-native": "0.86.2",
     "react-native-fast-video": "file:.."
   },
   "devDependencies": {
     "@types/react": "^19.0.0",
-    "typescript": "^5.9.0"
+    "typescript": "~6.0.3"
   }
 }
