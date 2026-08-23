@@ -1,0 +1,53 @@
+name: Apply Phase 5 gap-closure patch
+
+on:
+  push:
+    branches: [feat/phase5-gap-closure]
+    paths:
+      - '.gap-closure/ts.patch.xz.b64'
+      - '.github/workflows/apply-gap-closure-patch.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: phase5-gap-closure-patch
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/phase5-gap-closure
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Verify and apply patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(sha256sum .gap-closure/ts.patch.xz.b64 | cut -d' ' -f1)" = "9e8321dffa4943269a70d090fee505f279f5a91c1e1f1ec154c018c235dd8086"
+          base64 --decode .gap-closure/ts.patch.xz.b64 | xz --decompress --stdout > /tmp/ts.patch
+          test "$(sha256sum /tmp/ts.patch | cut -d' ' -f1)" = "ec559620194606af4355be630a91bbef94aea11a2a52a04eaa388832fc0c58a4"
+          git apply --check /tmp/ts.patch
+          git apply /tmp/ts.patch
+      - name: Validate TypeScript boundary
+        run: |
+          npm install --ignore-scripts --no-audit --no-fund
+          npm run typecheck
+          npm run build
+      - name: Commit validated source and remove transport
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .gap-closure
+          rm -f .github/workflows/apply-gap-closure-patch.yml
+          git config user.name "Vivek JM"
+          git config user.email "vivekjm77@gmail.com"
+          git add -A
+          git commit -m "fix: harden TypeScript and web runtime contracts"
+          git push origin HEAD:feat/phase5-gap-closure

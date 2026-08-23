@@ -7,192 +7,268 @@ import {
   type CSSProperties,
   type ForwardedRef,
 } from 'react';
-import { StyleSheet } from 'react-native';
 
 import type {
+  FastVideoError,
   FastVideoMetrics,
+  FastVideoProgress,
   FastVideoProps,
   FastVideoRef,
-  FastVideoTrack,
+  FastVideoTracks,
 } from './FastVideo.types';
 import { normalizeFastVideoSource } from './normalizeSource';
 
-function WebFastVideo(
+type WebVideoElement = HTMLVideoElement & {
+  requestPictureInPicture?: () => Promise<PictureInPictureWindow>;
+  webkitEnterFullscreen?: () => void;
+};
+
+type PictureInPictureDocument = Document & {
+  pictureInPictureElement?: Element | null;
+  exitPictureInPicture?: () => Promise<void>;
+};
+
+const EMPTY_TRACKS: FastVideoTracks = {
+  video: [],
+  audio: [],
+  text: [],
+};
+
+function FastVideoWebComponent(
   props: FastVideoProps,
   forwardedRef: ForwardedRef<FastVideoRef>
 ) {
-  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const videoRef = useRef<WebVideoElement | null>(null);
   const normalized = useMemo(() => normalizeFastVideoSource(props.source), [props.source]);
-  const firstFrameSent = useRef(false);
-  const metrics = useRef<FastVideoMetrics>(emptyMetrics());
+  const source = normalized.sourceObject;
+  const loadStartedAt = useRef(now());
+  const firstFrameSeen = useRef(false);
+  const lastProgressEmitAt = useRef(0);
+  const metricsRef = useRef<FastVideoMetrics>(initialMetrics());
 
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    video.playbackRate = props.rate ?? 1;
-    video.volume = Math.min(1, Math.max(0, props.volume ?? 1));
-    video.muted = props.muted ?? false;
-    video.loop = props.repeat ?? false;
-    if (props.paused === false || props.autoplay) void video.play().catch(() => undefined);
-    else video.pause();
-  }, [props.autoplay, props.muted, props.paused, props.rate, props.repeat, props.volume]);
+  const updateMetrics = (patch: Partial<FastVideoMetrics>) => {
+    metricsRef.current = { ...metricsRef.current, ...patch };
+    props.onMetrics?.(metricsRef.current);
+  };
 
   useImperativeHandle(
     forwardedRef,
     () => ({
       async play() {
-        await videoRef.current?.play();
+        await mounted(videoRef).play();
       },
       async pause() {
-        videoRef.current?.pause();
+        mounted(videoRef).pause();
       },
       async replay() {
-        if (!videoRef.current) return;
-        videoRef.current.currentTime = 0;
-        await videoRef.current.play();
+        const video = mounted(videoRef);
+        video.currentTime = 0;
+        await video.play();
       },
       async seekTo(positionMs) {
-        if (videoRef.current) videoRef.current.currentTime = Math.max(0, positionMs / 1_000);
+        mounted(videoRef).currentTime = finite(positionMs, 'positionMs') / 1_000;
       },
       async seekBy(deltaMs) {
-        if (videoRef.current) {
-          videoRef.current.currentTime = Math.max(0, videoRef.current.currentTime + deltaMs / 1_000);
-        }
+        const video = mounted(videoRef);
+        video.currentTime = Math.max(0, video.currentTime + finite(deltaMs, 'deltaMs') / 1_000);
       },
       async goToLive() {
-        const video = videoRef.current;
-        if (video?.seekable.length) {
-          video.currentTime = video.seekable.end(video.seekable.length - 1);
-          await video.play();
-        }
+        const video = mounted(videoRef);
+        const end = seekableEnd(video);
+        if (end !== null) video.currentTime = end;
+        await video.play();
       },
       async selectTrack(type, id) {
-        const video = videoRef.current;
-        if (!video || type !== 'text') return;
+        const video = mounted(videoRef);
+        if (type !== 'text') return;
+        const selected = id === null ? -1 : Number(id.split(':').at(-1));
         Array.from(video.textTracks).forEach((track, index) => {
-          track.mode = id === `text:${index}` ? 'showing' : 'disabled';
+          track.mode = index === selected ? 'showing' : 'disabled';
         });
       },
       async getSnapshot() {
-        return metrics.current;
+        return metricsRef.current;
       },
       async enterPictureInPicture() {
-        const video = videoRef.current as HTMLVideoElement & {
-          requestPictureInPicture?: () => Promise<unknown>;
-        };
-        if (!video?.requestPictureInPicture) return false;
-        await video.requestPictureInPicture();
-        return true;
+        const video = mounted(videoRef);
+        if (video.requestPictureInPicture) {
+          await video.requestPictureInPicture();
+          return true;
+        }
+        video.webkitEnterFullscreen?.();
+        return false;
       },
       async stopPictureInPicture() {
-        const pipDocument = typeof document === 'undefined' ? undefined : document as Document & {
-          pictureInPictureElement?: Element | null;
-          exitPictureInPicture?: () => Promise<void>;
-        };
-        if (pipDocument?.pictureInPictureElement) {
-          await pipDocument.exitPictureInPicture?.();
+        const documentWithPiP = document as PictureInPictureDocument;
+        if (documentWithPiP.pictureInPictureElement && documentWithPiP.exitPictureInPicture) {
+          await documentWithPiP.exitPictureInPicture();
         }
       },
     }),
     []
   );
 
-  const style = StyleSheet.flatten(props.style) as unknown as CSSProperties | undefined;
-  const native = normalized.nativeSource;
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const onEnter = () => props.onPictureInPictureChange?.({ active: true });
+    const onLeave = () => props.onPictureInPictureChange?.({ active: false });
+    video.addEventListener('enterpictureinpicture', onEnter);
+    video.addEventListener('leavepictureinpicture', onLeave);
+    return () => {
+      video.removeEventListener('enterpictureinpicture', onEnter);
+      video.removeEventListener('leavepictureinpicture', onLeave);
+    };
+  }, [props.onPictureInPictureChange]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.volume = clamp(props.volume ?? 1, 0, 1);
+    video.muted = props.muted ?? false;
+    video.playbackRate = clamp(props.rate ?? 1, 0.25, 4);
+    video.loop = props.repeat ?? false;
+  }, [props.volume, props.muted, props.rate, props.repeat]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const autoplay = props.autoplay ?? false;
+    const paused = props.paused ?? !autoplay;
+    if (paused) video.pause();
+    else void video.play().catch(() => undefined);
+  }, [props.autoplay, props.paused, source.uri]);
+
+  useEffect(() => {
+    loadStartedAt.current = now();
+    firstFrameSeen.current = false;
+    metricsRef.current = initialMetrics();
+    props.onLoadStart?.({ uri: source.uri });
+  }, [source.uri, props.onLoadStart]);
+
+  const objectFit: CSSProperties['objectFit'] =
+    props.contentFit === 'cover'
+      ? 'cover'
+      : props.contentFit === 'fill'
+        ? 'fill'
+        : props.contentFit === 'none'
+          ? 'none'
+          : 'contain';
+  const webStyle = { ...(props.style as CSSProperties | undefined), objectFit };
+
+  const emitProgress = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    const timestamp = now();
+    const interval = clamp(props.progressIntervalMs ?? 250, 100, 2_000);
+    if (timestamp - lastProgressEmitAt.current < interval) return;
+    lastProgressEmitAt.current = timestamp;
+
+    const positionMs = finiteOrZero(video.currentTime) * 1_000;
+    const durationMs = finiteOrZero(video.duration) * 1_000;
+    const bufferedPositionMs = bufferedEnd(video) * 1_000;
+    const liveEnd = seekableEnd(video);
+    const liveOffsetMs = liveEnd === null ? undefined : Math.max(0, (liveEnd - video.currentTime) * 1_000);
+    const progress: FastVideoProgress = {
+      positionMs,
+      durationMs,
+      bufferedPositionMs,
+      isLive: liveEnd !== null && !Number.isFinite(video.duration),
+      isPlaying: !video.paused && !video.ended,
+      playbackState: stateFor(video),
+      ...(liveOffsetMs === undefined ? {} : { liveOffsetMs }),
+    };
+    props.onProgress?.(progress);
+    updateMetrics({
+      state: progress.playbackState,
+      playWhenReady: !video.paused,
+      positionMs,
+      durationMs,
+      bufferedPositionMs,
+      liveOffsetMs: liveOffsetMs ?? -1,
+      activePlaybackMs: positionMs,
+    } as Partial<FastVideoMetrics>);
+  };
 
   return (
     <video
       ref={videoRef}
       data-testid={props.testID}
-      src={native.uri}
-      style={{
-        ...style,
-        objectFit: objectFit(props.contentFit),
-      }}
-      autoPlay={props.autoplay}
-      muted={props.muted}
-      loop={props.repeat}
+      aria-label={props.accessibilityLabel}
+      src={source.uri}
+      style={webStyle}
+      autoPlay={props.autoplay ?? false}
+      muted={props.muted ?? false}
+      loop={props.repeat ?? false}
       playsInline
-      onLoadStart={() => props.onLoadStart?.({ uri: native.uri })}
+      preload="auto"
       onLoadedMetadata={(event) => {
         const video = event.currentTarget;
-        props.onReady?.({ durationMs: finiteSeconds(video.duration) * 1_000, isLive: !Number.isFinite(video.duration) });
+        const durationMs = finiteOrZero(video.duration) * 1_000;
+        props.onReady?.({ durationMs, isLive: !Number.isFinite(video.duration) });
         props.onVideoSize?.({ width: video.videoWidth, height: video.videoHeight, pixelRatio: 1 });
-        props.onTracksChanged?.({
-          video: [],
-          audio: [],
-          text: Array.from(video.textTracks).map<FastVideoTrack>((track, index) => ({
-            id: `text:${index}`,
-            label: track.label,
-            language: track.language,
-            selected: track.mode === 'showing',
-            supported: true,
-          })),
+        props.onTracksChanged?.(EMPTY_TRACKS);
+        updateMetrics({ state: 'ready', durationMs } as Partial<FastVideoMetrics>);
+      }}
+      onLoadedData={() => {
+        if (firstFrameSeen.current) return;
+        firstFrameSeen.current = true;
+        const timeToFirstFrameMs = Math.max(0, now() - loadStartedAt.current);
+        props.onFirstFrame?.({
+          timestampMs: Date.now(),
+          timeToFirstFrameMs,
+          startupPath: 'browser-native',
         });
+        updateMetrics({ firstFrameRendered: true, timeToFirstFrameMs } as Partial<FastVideoMetrics>);
       }}
-      onPlaying={() => {
-        props.onPlaybackStateChange?.({ state: 'playing' });
-        props.onBuffer?.({ buffering: false });
-        if (!firstFrameSent.current) {
-          firstFrameSent.current = true;
-          props.onFirstFrame?.({ timestampMs: Date.now() });
-        }
-      }}
-      onPause={() => props.onPlaybackStateChange?.({ state: 'paused' })}
       onWaiting={() => {
         props.onBuffer?.({ buffering: true });
         props.onPlaybackStateChange?.({ state: 'buffering' });
+        updateMetrics({ state: 'buffering' } as Partial<FastVideoMetrics>);
+      }}
+      onPlaying={() => {
+        props.onBuffer?.({ buffering: false });
+        props.onPlaybackStateChange?.({ state: 'playing' });
+        updateMetrics({ state: 'playing', playWhenReady: true } as Partial<FastVideoMetrics>);
+      }}
+      onPause={(event) => {
+        if (event.currentTarget.ended) return;
+        props.onPlaybackStateChange?.({ state: 'paused' });
+        updateMetrics({ state: 'paused', playWhenReady: false } as Partial<FastVideoMetrics>);
       }}
       onEnded={() => {
         props.onPlaybackStateChange?.({ state: 'ended' });
+        updateMetrics({ state: 'ended', playWhenReady: false } as Partial<FastVideoMetrics>);
         props.onEnd?.();
       }}
-      onTimeUpdate={(event) => {
-        const video = event.currentTarget;
-        const buffered = video.buffered.length ? video.buffered.end(video.buffered.length - 1) : 0;
-        const progress = {
-          positionMs: video.currentTime * 1_000,
-          durationMs: finiteSeconds(video.duration) * 1_000,
-          bufferedPositionMs: buffered * 1_000,
-          isLive: !Number.isFinite(video.duration),
-          isPlaying: !video.paused,
-          playbackState: video.paused ? ('paused' as const) : ('playing' as const),
+      onTimeUpdate={emitProgress}
+      onProgress={emitProgress}
+      onError={(event) => {
+        const mediaError = event.currentTarget.error;
+        const error: FastVideoError = {
+          code: 'E_WEB_PLAYBACK',
+          message: mediaError?.message || 'Browser video playback failed.',
+          nativeCode: mediaError ? String(mediaError.code) : undefined,
         };
-        metrics.current = { ...metrics.current, ...progress, state: progress.playbackState };
-        props.onProgress?.(progress);
+        props.onError?.(error);
+        updateMetrics({ state: 'error', playWhenReady: false } as Partial<FastVideoMetrics>);
       }}
-      onError={() => props.onError?.({ code: 'E_WEB_PLAYBACK', message: 'Browser video playback failed.' })}
-      onEnterPictureInPicture={() => props.onPictureInPictureChange?.({ active: true })}
-      onLeavePictureInPicture={() => props.onPictureInPictureChange?.({ active: false })}
     >
-      {native.subtitles.map((subtitle, index) => (
+      {source.subtitles?.map((subtitle, index) => (
         <track
-          key={subtitle.id ?? subtitle.uri}
+          key={subtitle.id ?? `${subtitle.uri}:${index}`}
           src={subtitle.uri}
           kind="subtitles"
           srcLang={subtitle.language}
           label={subtitle.label}
-          default={subtitle.isDefault || index === 0}
+          default={subtitle.isDefault}
         />
       ))}
     </video>
   );
 }
 
-function objectFit(value: FastVideoProps['contentFit']): CSSProperties['objectFit'] {
-  switch (value) {
-    case 'cover': return 'cover';
-    case 'fill': return 'fill';
-    case 'none': return 'none';
-    default: return 'contain';
-  }
-}
-
-function finiteSeconds(value: number): number {
-  return Number.isFinite(value) && value >= 0 ? value : 0;
-}
-
-function emptyMetrics(): FastVideoMetrics {
+function initialMetrics(): FastVideoMetrics {
   return {
     state: 'idle',
     playWhenReady: false,
@@ -208,14 +284,58 @@ function emptyMetrics(): FastVideoMetrics {
     droppedFrameRatio: 0,
     bytesTransferred: 0,
     estimatedBitrateBps: 0,
+    predictedBandwidthBps: 0,
+    bandwidthConfidence: 0,
+    bandwidthVolatility: 0,
+    bandwidthSamples: 0,
+    liveOffsetMs: -1,
     positionMs: 0,
     durationMs: 0,
     bufferedPositionMs: 0,
-    liveOffsetMs: -1,
+    qoeScore: 100,
+    averageFrameProcessingOffsetUs: 0,
+    frameProcessingSamples: 0,
     isLive: false,
     firstFrameRendered: false,
   };
 }
 
-export const FastVideo = forwardRef(WebFastVideo);
+function mounted(ref: { current: WebVideoElement | null }): WebVideoElement {
+  if (!ref.current) throw new Error('FastVideo web element is not mounted.');
+  return ref.current;
+}
+
+function now(): number {
+  return typeof performance === 'undefined' ? Date.now() : performance.now();
+}
+
+function finite(value: number, name: string): number {
+  if (!Number.isFinite(value)) throw new TypeError(`${name} must be a finite number.`);
+  return value;
+}
+
+function finiteOrZero(value: number): number {
+  return Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, finite(value, 'FastVideo numeric prop')));
+}
+
+function bufferedEnd(video: HTMLVideoElement): number {
+  return video.buffered.length ? video.buffered.end(video.buffered.length - 1) : 0;
+}
+
+function seekableEnd(video: HTMLVideoElement): number | null {
+  return video.seekable.length ? video.seekable.end(video.seekable.length - 1) : null;
+}
+
+function stateFor(video: HTMLVideoElement): FastVideoMetrics['state'] {
+  if (video.error) return 'error';
+  if (video.ended) return 'ended';
+  if (video.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) return 'buffering';
+  return video.paused ? 'paused' : 'playing';
+}
+
+export const FastVideo = forwardRef(FastVideoWebComponent);
 FastVideo.displayName = 'FastVideo';

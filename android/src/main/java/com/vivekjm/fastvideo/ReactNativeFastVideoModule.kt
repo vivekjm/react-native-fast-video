@@ -9,34 +9,56 @@ class ReactNativeFastVideoModule : Module() {
     Name("ReactNativeFastVideo")
 
     AsyncFunction("getCapabilities") {
-      FastVideoCapabilities.read(appContext.reactContext ?: appContext.throwingActivity.applicationContext)
+      FastVideoCapabilities.read(
+        appContext.reactContext ?: appContext.throwingActivity.applicationContext
+      )
     }
 
     Function("preload") { sources: List<FastVideoSource>, currentIndex: Int ->
       val context = appContext.reactContext ?: appContext.throwingActivity.applicationContext
       val accepted = FastVideoPreloadRuntime.preload(context, sources, currentIndex)
-      mapOf("platform" to "android", "accepted" to accepted, "strategy" to "media3-memory-disk")
+      mapOf(
+        "platform" to "android",
+        "accepted" to accepted,
+        "strategy" to "media3-memory-disk"
+      )
     }
 
-    Function("configureRuntime") { cacheMaxBytes: Double?, maxPooledPlayersPerMode: Int?, adaptiveMode: String?, maxParallelDownloads: Int? ->
+    Function("configureRuntime") {
+        cacheMaxBytes: Double?,
+        maxPooledPlayersPerMode: Int?,
+        adaptiveMode: String?,
+        maxParallelDownloads: Int? ->
       val context = appContext.reactContext ?: appContext.throwingActivity.applicationContext
-      val cache = FastVideoCacheRuntime.configure(cacheMaxBytes?.takeIf { it.isFinite() && it > 0 }?.toLong())
+      val cache = FastVideoCacheRuntime.configure(
+        cacheMaxBytes?.takeIf { it.isFinite() && it > 0 }?.toLong()
+      )
       FastVideoPreloadRuntime.configurePoolSize(maxPooledPlayersPerMode)
       FastVideoAdaptiveRuntime.configure(adaptiveMode)
-      maxParallelDownloads?.coerceIn(1, 6)?.let { FastVideoDownloadRuntime.manager(context).maxParallelDownloads = it }
-      cache + FastVideoPreloadRuntime.stats() + FastVideoAdaptiveRuntime.runtimeStats(context) + FastVideoDownloadRuntime.stats(context) + FastVideoCdnRuntime.stats()
+      maxParallelDownloads
+        ?.coerceIn(1, 6)
+        ?.let { FastVideoDownloadRuntime.manager(context).maxParallelDownloads = it }
+      cache +
+        FastVideoPreloadRuntime.stats() +
+        FastVideoAdaptiveRuntime.runtimeStats(context) +
+        FastVideoDownloadRuntime.stats(context) +
+        FastVideoCdnRuntime.stats()
     }
 
     Function("getRuntimeStats") {
       val context = appContext.reactContext ?: appContext.throwingActivity.applicationContext
-      FastVideoCacheRuntime.stats(context) + FastVideoPreloadRuntime.stats() + FastVideoAdaptiveRuntime.runtimeStats(context) + FastVideoDownloadRuntime.stats(context) + FastVideoCdnRuntime.stats() + mapOf("platform" to "android")
+      FastVideoCacheRuntime.stats(context) +
+        FastVideoPreloadRuntime.stats() +
+        FastVideoAdaptiveRuntime.runtimeStats(context) +
+        FastVideoDownloadRuntime.stats(context) +
+        FastVideoCdnRuntime.stats() +
+        mapOf("platform" to "android")
     }
 
     AsyncFunction("clearCache") {
       val context = appContext.reactContext ?: appContext.throwingActivity.applicationContext
       FastVideoCacheRuntime.clear(context)
     }
-
 
     Function("downloadOffline") { source: FastVideoSource, id: String?, _: String? ->
       val context = appContext.reactContext ?: appContext.throwingActivity.applicationContext
@@ -107,10 +129,18 @@ class ReactNativeFastVideoModule : Module() {
       Prop("volume") { view: FastVideoView, value: Double? -> view.setVolume(value ?: 1.0) }
       Prop("rate") { view: FastVideoView, value: Double? -> view.setRate(value ?: 1.0) }
       Prop("repeat") { view: FastVideoView, value: Boolean? -> view.setRepeat(value ?: false) }
-      Prop("latencyMode") { view: FastVideoView, value: String? -> view.setLatencyMode(value ?: "balanced") }
-      Prop("progressIntervalMs") { view: FastVideoView, value: Double? -> view.setProgressInterval(value ?: 250.0) }
-      Prop("surfaceType") { view: FastVideoView, value: String? -> view.setSurfaceType(value ?: "surface") }
-      Prop("contentFit") { view: FastVideoView, value: String? -> view.setContentFit(value ?: "contain") }
+      Prop("latencyMode") { view: FastVideoView, value: String? ->
+        view.setLatencyMode(value ?: "balanced")
+      }
+      Prop("progressIntervalMs") { view: FastVideoView, value: Double? ->
+        view.setProgressInterval(value ?: 250.0)
+      }
+      Prop("surfaceType") { view: FastVideoView, value: String? ->
+        view.setSurfaceType(value ?: "surface")
+      }
+      Prop("contentFit") { view: FastVideoView, value: String? ->
+        view.setContentFit(value ?: "contain")
+      }
       Prop("maxBitrate") { view: FastVideoView, value: Double? -> view.setMaxBitrate(value) }
       Prop("preferredAudioLanguage") { view: FastVideoView, value: String? ->
         view.setPreferredAudioLanguage(value)
@@ -118,21 +148,29 @@ class ReactNativeFastVideoModule : Module() {
       Prop("preferredTextLanguage") { view: FastVideoView, value: String? ->
         view.setPreferredTextLanguage(value)
       }
+      // Kept in the shared prop contract. Android has no AVPlayer-style external playback switch;
+      // Cast is an explicit Phase 6 subsystem rather than an implicit view property.
+      Prop("allowsExternalPlayback") { _: FastVideoView, _: Boolean? -> Unit }
 
       AsyncFunction("play") { view: FastVideoView -> view.play() }.runOnQueue(Queues.MAIN)
       AsyncFunction("pause") { view: FastVideoView -> view.pause() }.runOnQueue(Queues.MAIN)
       AsyncFunction("replay") { view: FastVideoView -> view.replay() }.runOnQueue(Queues.MAIN)
-      AsyncFunction("seekTo") { view: FastVideoView, positionMs: Double -> view.seekTo(positionMs) }
+      AsyncFunction("seekTo") { view: FastVideoView, positionMs: Double ->
+        view.seekTo(positionMs)
+      }.runOnQueue(Queues.MAIN)
+      AsyncFunction("seekBy") { view: FastVideoView, deltaMs: Double ->
+        view.seekBy(deltaMs)
+      }.runOnQueue(Queues.MAIN)
+      AsyncFunction("goToLive") { view: FastVideoView -> view.goToLive() }
         .runOnQueue(Queues.MAIN)
-      AsyncFunction("seekBy") { view: FastVideoView, deltaMs: Double -> view.seekBy(deltaMs) }
-        .runOnQueue(Queues.MAIN)
-      AsyncFunction("goToLive") { view: FastVideoView -> view.goToLive() }.runOnQueue(Queues.MAIN)
       AsyncFunction("selectTrack") { view: FastVideoView, type: String, id: String? ->
         view.selectTrack(type, id)
       }.runOnQueue(Queues.MAIN)
-      AsyncFunction("getSnapshot") { view: FastVideoView -> view.snapshot() }.runOnQueue(Queues.MAIN)
-      AsyncFunction("enterPictureInPicture") { view: FastVideoView -> view.enterPictureInPicture() }
+      AsyncFunction("getSnapshot") { view: FastVideoView -> view.snapshot() }
         .runOnQueue(Queues.MAIN)
+      AsyncFunction("enterPictureInPicture") { view: FastVideoView ->
+        view.enterPictureInPicture()
+      }.runOnQueue(Queues.MAIN)
 
       OnViewDestroys { view -> view.release() }
     }

@@ -1,0 +1,197 @@
+name: Phase 1-5 hardening certification
+
+on:
+  push:
+    branches: [feat/phase5-gap-closure]
+    paths:
+      - '.phase5-certification-trigger'
+      - '.github/workflows/phase5-hardening-certification.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: phase5-hardening-certification
+  cancel-in-progress: true
+
+jobs:
+  host:
+    runs-on: ubuntu-latest
+    outputs:
+      outcome: ${{ steps.gate.outcome }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - id: gate
+        name: Run host release contract
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            npm ci --ignore-scripts --no-audit --no-fund
+            npm run audit
+            npm run typecheck
+            npm run build
+            npm run test:contracts
+            npm run pack:check
+            npm run test:core
+            npm run benchmark:sample
+            npm run benchmark:qoe
+            npm run benchmark:predictive
+            npm run benchmark:device-sample
+          } 2>&1 | tee host.log
+      - uses: actions/upload-artifact@v5
+        with:
+          name: hardening-host-log
+          path: host.log
+      - if: steps.gate.outcome != 'success'
+        run: exit 1
+
+  android:
+    runs-on: ubuntu-latest
+    outputs:
+      outcome: ${{ steps.gate.outcome }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - id: gate
+        name: Generate and assemble Android example
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            npm ci --ignore-scripts --no-audit --no-fund
+            npm run build
+            cd example
+            npm install --ignore-scripts --no-audit --no-fund
+            npx expo prebuild --platform android --no-install --clean
+            cd android
+            ./gradlew :app:assembleDebug --stacktrace --warning-mode all
+          } 2>&1 | tee "$GITHUB_WORKSPACE/android.log"
+      - uses: actions/upload-artifact@v5
+        with:
+          name: hardening-android-log
+          path: android.log
+      - if: steps.gate.outcome != 'success'
+        run: exit 1
+
+  apple:
+    runs-on: macos-latest
+    outputs:
+      outcome: ${{ steps.gate.outcome }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - id: gate
+        name: Generate and integrate Apple example
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            npm ci --ignore-scripts --no-audit --no-fund
+            npm run build
+            swiftc -parse ios/*.swift
+            ruby -c ios/ReactNativeFastVideo.podspec
+            cd example
+            npm install --ignore-scripts --no-audit --no-fund
+            npx expo prebuild --platform ios --no-install --clean
+            cd ios
+            pod install --repo-update
+            workspace=$(find . -maxdepth 1 -name '*.xcworkspace' -print -quit)
+            scheme=$(xcodebuild -workspace "$workspace" -list -json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["workspace"]["schemes"][0])')
+            xcodebuild -workspace "$workspace" -scheme "$scheme" -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
+          } 2>&1 | tee "$GITHUB_WORKSPACE/apple.log"
+      - uses: actions/upload-artifact@v5
+        with:
+          name: hardening-apple-log
+          path: apple.log
+      - if: steps.gate.outcome != 'success'
+        run: exit 1
+
+  report:
+    if: always()
+    needs: [host, android, apple]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: feat/phase5-gap-closure
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: hardening-*-log
+          path: certification-logs
+          merge-multiple: true
+      - name: Persist certification report
+        env:
+          HOST_RESULT: ${{ needs.host.result }}
+          ANDROID_RESULT: ${{ needs.android.result }}
+          APPLE_RESULT: ${{ needs.apple.result }}
+          HOST_OUTCOME: ${{ needs.host.outputs.outcome }}
+          ANDROID_OUTCOME: ${{ needs.android.outputs.outcome }}
+          APPLE_OUTCOME: ${{ needs.apple.outputs.outcome }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json, os
+          results = {
+            'host': os.environ.get('HOST_OUTCOME') or os.environ.get('HOST_RESULT'),
+            'android': os.environ.get('ANDROID_OUTCOME') or os.environ.get('ANDROID_RESULT'),
+            'apple': os.environ.get('APPLE_OUTCOME') or os.environ.get('APPLE_RESULT'),
+          }
+          green = all(value == 'success' for value in results.values())
+          Path('docs/PHASE5_CERTIFICATION_STATUS.json').write_text(json.dumps({
+            'status': 'green' if green else 'red',
+            'results': results,
+            'source_sha': os.environ.get('GITHUB_SHA'),
+          }, indent=2) + '\n')
+          lines = ['# Phase 1–5 certification status', '', f"**Status: {'GREEN' if green else 'RED'}**", '']
+          lines += [f'- {name}: `{value}`' for name, value in results.items()]
+          lines += ['', '## Compiler output', '']
+          for name in ('host', 'android', 'apple'):
+            path = Path('certification-logs') / f'{name}.log'
+            lines += [f'### {name}', '', '```text']
+            if path.exists():
+              text = path.read_text(errors='replace')
+              lines.append(text[-50000:])
+            else:
+              lines.append('No log artifact was produced.')
+            lines += ['```', '']
+          Path('docs/PHASE5_CERTIFICATION_STATUS.md').write_text('\n'.join(lines))
+          PY
+      - name: Commit report without retriggering certification
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/PHASE5_CERTIFICATION_STATUS.*
+          git diff --cached --quiet || git commit -m 'ci: record Phase 1-5 certification result'
+          git push origin HEAD:feat/phase5-gap-closure
+      - name: Enforce green matrix
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          data=json.load(open('docs/PHASE5_CERTIFICATION_STATUS.json'))
+          raise SystemExit(0 if data['status']=='green' else 1)
+          PY

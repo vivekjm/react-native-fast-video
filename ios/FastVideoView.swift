@@ -52,9 +52,23 @@ internal final class FastVideoView: ExpoView, FastVideoEngineListener, AVPicture
     guard !released else { return }
     source = value
     guard let value, !value.uri.isEmpty else {
+      engine.player.pause()
       engine.player.replaceCurrentItem(with: nil)
       return
     }
+
+    let type = value.type.lowercased()
+    if type == "dash" || type == "smoothstreaming" || type == "ss" {
+      engine.player.pause()
+      engine.player.replaceCurrentItem(with: nil)
+      emitError(
+        code: "E_UNSUPPORTED_SOURCE",
+        message: "Apple playback supports progressive media and HLS. Provide an HLS rendition for this source.",
+        nativeCode: type
+      )
+      return
+    }
+
     engine.load(value, autoplay: autoplay || !paused, latencyMode: latencyMode)
     engine.setMaxBitrate(maxBitrate)
   }
@@ -88,7 +102,7 @@ internal final class FastVideoView: ExpoView, FastVideoEngineListener, AVPicture
       : "balanced"
     guard latencyMode != normalized else { return }
     latencyMode = normalized
-    if let source { engine.load(source, autoplay: autoplay || !paused, latencyMode: latencyMode) }
+    if let source { setSource(source) }
   }
 
   func setProgressInterval(_ value: Double) {

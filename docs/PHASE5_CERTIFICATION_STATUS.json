@@ -1,0 +1,9 @@
+{
+  "status": "red",
+  "results": {
+    "host": "skipped",
+    "android": "skipped",
+    "apple": "skipped"
+  },
+  "source_sha": "9b70a8c797c5b41f23ab453fe7ce89bf77a0e33b"
+}

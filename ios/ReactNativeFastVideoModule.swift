@@ -10,20 +10,30 @@ public final class ReactNativeFastVideoModule: Module {
 
     Function("preload") { (sources: [FastVideoSource], currentIndex: Int) in
       let accepted = FastVideoPreloader.shared.preload(sources, currentIndex: currentIndex)
-      return ["platform": "ios", "accepted": accepted, "strategy": "avasset-warm"] as [String: Any]
+      return [
+        "platform": "ios",
+        "accepted": accepted,
+        "strategy": "avasset-warm"
+      ] as [String: Any]
     }
 
     Function("focusPreloads") { (currentIndex: Int, velocityItemsPerSecond: Double) in
-      FastVideoPreloader.shared.focus(currentIndex, velocityItemsPerSecond: velocityItemsPerSecond)
+      FastVideoPreloader.shared.focus(
+        currentIndex,
+        velocityItemsPerSecond: velocityItemsPerSecond
+      )
     }
 
     Function("clearPreloads") {
       FastVideoPreloader.shared.clear()
     }
 
-    Function("configureRuntime") { (_: Double?, maxPooledPlayersPerMode: Int?, adaptiveMode: String?, _: Int?) in
+    Function("configureRuntime") {
+        (_: Double?, maxPooledPlayersPerMode: Int?, adaptiveMode: String?, _: Int?) in
       FastVideoAdaptiveRuntime.shared.configure(mode: adaptiveMode)
-      var result = FastVideoAppleRuntime.shared.configure(maxPooledPlayers: maxPooledPlayersPerMode)
+      var result = FastVideoAppleRuntime.shared.configure(
+        maxPooledPlayers: maxPooledPlayersPerMode
+      )
       result.merge(FastVideoAdaptiveRuntime.shared.stats()) { _, new in new }
       result.merge(FastVideoOfflineRuntime.shared.stats()) { _, new in new }
       result.merge(FastVideoCdnRuntime.shared.stats()) { _, new in new }
@@ -48,7 +58,6 @@ public final class ReactNativeFastVideoModule: Module {
       FastVideoAppleRuntime.shared.clearTransientState()
       return FastVideoAppleRuntime.shared.stats()
     }
-
 
     Function("downloadOffline") { (source: FastVideoSource, id: String?, title: String?) in
       try FastVideoOfflineRuntime.shared.enqueue(source: source, id: id, title: title)
@@ -95,19 +104,36 @@ public final class ReactNativeFastVideoModule: Module {
         "onPictureInPictureChange"
       )
 
-      Prop("source") { (view: FastVideoView, source: FastVideoSource?) in view.setSource(source) }
-      Prop("autoplay") { (view: FastVideoView, value: Bool?) in view.setAutoplay(value ?? false) }
-      Prop("paused") { (view: FastVideoView, value: Bool?) in view.setPaused(value ?? true) }
-      Prop("muted") { (view: FastVideoView, value: Bool?) in view.setMuted(value ?? false) }
-      Prop("volume") { (view: FastVideoView, value: Double?) in view.setVolume(value ?? 1) }
-      Prop("rate") { (view: FastVideoView, value: Double?) in view.setRate(value ?? 1) }
-      Prop("repeat") { (view: FastVideoView, value: Bool?) in view.setRepeat(value ?? false) }
+      Prop("source") { (view: FastVideoView, source: FastVideoSource?) in
+        view.setSource(source)
+      }
+      Prop("autoplay") { (view: FastVideoView, value: Bool?) in
+        view.setAutoplay(value ?? false)
+      }
+      Prop("paused") { (view: FastVideoView, value: Bool?) in
+        view.setPaused(value ?? true)
+      }
+      Prop("muted") { (view: FastVideoView, value: Bool?) in
+        view.setMuted(value ?? false)
+      }
+      Prop("volume") { (view: FastVideoView, value: Double?) in
+        view.setVolume(value ?? 1)
+      }
+      Prop("rate") { (view: FastVideoView, value: Double?) in
+        view.setRate(value ?? 1)
+      }
+      Prop("repeat") { (view: FastVideoView, value: Bool?) in
+        view.setRepeat(value ?? false)
+      }
       Prop("latencyMode") { (view: FastVideoView, value: String?) in
         view.setLatencyMode(value ?? "balanced")
       }
       Prop("progressIntervalMs") { (view: FastVideoView, value: Double?) in
         view.setProgressInterval(value ?? 250)
       }
+      // SurfaceView versus TextureView is an Android rendering choice. Keep the property in the
+      // shared native contract so iOS never rejects a prop emitted by the cross-platform component.
+      Prop("surfaceType") { (_: FastVideoView, _: String?) in }
       Prop("contentFit") { (view: FastVideoView, value: String?) in
         view.setContentFit(value ?? "contain")
       }
@@ -127,8 +153,12 @@ public final class ReactNativeFastVideoModule: Module {
       AsyncFunction("play") { (view: FastVideoView) in view.play() }
       AsyncFunction("pause") { (view: FastVideoView) in view.pause() }
       AsyncFunction("replay") { (view: FastVideoView) in view.replay() }
-      AsyncFunction("seekTo") { (view: FastVideoView, positionMs: Double) in view.seekTo(positionMs) }
-      AsyncFunction("seekBy") { (view: FastVideoView, deltaMs: Double) in view.seekBy(deltaMs) }
+      AsyncFunction("seekTo") { (view: FastVideoView, positionMs: Double) in
+        view.seekTo(positionMs)
+      }
+      AsyncFunction("seekBy") { (view: FastVideoView, deltaMs: Double) in
+        view.seekBy(deltaMs)
+      }
       AsyncFunction("goToLive") { (view: FastVideoView) in view.goToLive() }
       AsyncFunction("selectTrack") { (view: FastVideoView, type: String, id: String?) in
         view.selectTrack(type: type, id: id)

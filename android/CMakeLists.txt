@@ -11,7 +11,7 @@ add_library(react-native-fast-video SHARED
 target_compile_features(react-native-fast-video PRIVATE cxx_std_20)
 target_include_directories(react-native-fast-video PRIVATE ../cpp/include)
 target_link_libraries(react-native-fast-video
-  rnfv_fast_core
+  rnfv_core
   android
   log
 )

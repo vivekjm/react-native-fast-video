@@ -8,11 +8,15 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   fast-core:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Configure
         run: cmake -S cpp -B cpp/build -DRNFV_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release
       - name: Build
@@ -20,63 +24,129 @@ jobs:
       - name: Test
         run: ctest --test-dir cpp/build --output-on-failure -C Release
 
-  typescript:
+  fast-core-sanitizers:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - name: Configure with ASan and UBSan
+        run: >-
+          cmake -S cpp -B cpp/build-sanitized
+          -DRNFV_BUILD_TESTS=ON
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer'
+          -DCMAKE_EXE_LINKER_FLAGS='-fsanitize=address,undefined'
+      - run: cmake --build cpp/build-sanitized --parallel
+      - run: ctest --test-dir cpp/build-sanitized --output-on-failure
+        env:
+          ASAN_OPTIONS: detect_leaks=1:strict_string_checks=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+
+  typescript-and-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
-      - run: npm install --ignore-scripts --no-audit --no-fund
+          node-version: 24
+      - name: Install dependencies reproducibly
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --ignore-scripts --no-audit --no-fund
+          else
+            npm install --ignore-scripts --no-audit --no-fund
+          fi
       - run: npm run audit
       - run: npm run typecheck
       - run: npm run build
+      - run: npm run test:contracts
       - run: npm run benchmark:sample
       - run: npm run benchmark:qoe
       - run: npm run benchmark:predictive
       - run: npm run benchmark:device-sample
+      - run: npm run audit:package
 
   apple-source-smoke:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Parse Swift
         run: swiftc -parse ios/*.swift
       - name: Validate podspec syntax
         run: ruby -c ios/ReactNativeFastVideo.podspec
+      - name: Compile Objective-C++ bridge syntax
+        run: >-
+          xcrun clang++ -std=c++20 -fsyntax-only -x objective-c++
+          -Icpp/include
+          -F"$(xcrun --sdk iphonesimulator --show-sdk-path)/System/Library/Frameworks"
+          -isysroot "$(xcrun --sdk iphonesimulator --show-sdk-path)"
+          ios/RNFVFastCoreBridge.mm
 
   android-native-build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 24
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
-      - run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Install package dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --ignore-scripts --no-audit --no-fund
+          else
+            npm install --ignore-scripts --no-audit --no-fund
+          fi
       - run: npm run build
-      - working-directory: example
+      - name: Install example dependencies
+        working-directory: example
         run: npm install --ignore-scripts --no-audit --no-fund
-      - working-directory: example
+      - name: Generate Android project
+        working-directory: example
         run: npx expo prebuild --platform android --no-install
-      - working-directory: example/android
-        run: ./gradlew :app:assembleDebug --stacktrace
+      - name: Compile and lint Android development client
+        working-directory: example/android
+        run: ./gradlew :app:assembleDebug :app:lintDebug --stacktrace --no-daemon
 
-  apple-native-generation:
+  apple-native-build:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
-      - run: npm install --ignore-scripts --no-audit --no-fund
+          node-version: 24
+      - name: Install package dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --ignore-scripts --no-audit --no-fund
+          else
+            npm install --ignore-scripts --no-audit --no-fund
+          fi
       - run: npm run build
-      - working-directory: example
+      - name: Install example dependencies
+        working-directory: example
         run: npm install --ignore-scripts --no-audit --no-fund
-      - working-directory: example
+      - name: Generate iOS project
+        working-directory: example
         run: npx expo prebuild --platform ios --no-install
-      - working-directory: example/ios
+      - name: Install CocoaPods
+        working-directory: example/ios
         run: pod install
+      - name: Compile iOS development client
+        working-directory: example/ios
+        run: |
+          set -euo pipefail
+          workspace="$(find . -maxdepth 1 -name '*.xcworkspace' -print -quit)"
+          test -n "$workspace"
+          scheme="$(xcodebuild -workspace "$workspace" -list -json | python3 -c 'import json,sys; data=json.load(sys.stdin); print(data["workspace"]["schemes"][0])')"
+          test -n "$scheme"
+          xcodebuild \
+            -workspace "$workspace" \
+            -scheme "$scheme" \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
