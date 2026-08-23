@@ -80,7 +80,7 @@ function FastVideoWebComponent(
       },
       async selectTrack(type, id) {
         const video = mounted(videoRef);
-        if (type !== 'text' && type !== 'subtitle') return;
+        if (type !== 'text') return;
         const selected = id === null ? -1 : Number(id.split(':').at(-1));
         Array.from(video.textTracks).forEach((track, index) => {
           track.mode = index === selected ? 'showing' : 'disabled';
@@ -283,21 +283,21 @@ function initialMetrics(): FastVideoMetrics {
     droppedFrames: 0,
     droppedFrameRatio: 0,
     bytesTransferred: 0,
-    estimatedBitrate: 0,
+    estimatedBitrateBps: 0,
     predictedBandwidthBps: 0,
     bandwidthConfidence: 0,
     bandwidthVolatility: 0,
-    bandwidthSampleCount: 0,
+    bandwidthSamples: 0,
     liveOffsetMs: -1,
     positionMs: 0,
     durationMs: 0,
     bufferedPositionMs: 0,
     qoeScore: 100,
     averageFrameProcessingOffsetUs: 0,
-    peakFrameProcessingOffsetUs: 0,
-    frameProcessingSampleCount: 0,
+    frameProcessingSamples: 0,
+    isLive: false,
     firstFrameRendered: false,
-  } as FastVideoMetrics;
+  };
 }
 
 function mounted(ref: { current: WebVideoElement | null }): WebVideoElement {

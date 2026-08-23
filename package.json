@@ -40,7 +40,9 @@
   "files": [
     "android",
     "ios",
-    "cpp",
+    "cpp/CMakeLists.txt",
+    "cpp/include",
+    "cpp/src",
     "src",
     "build",
     "plugin/build",

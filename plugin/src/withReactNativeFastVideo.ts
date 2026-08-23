@@ -9,6 +9,27 @@ export interface ReactNativeFastVideoPluginOptions {
   backgroundPlayback?: boolean;
 }
 
+interface AndroidManifestNode {
+  $?: Record<string, string>;
+}
+
+interface AndroidIntentFilter {
+  action?: AndroidManifestNode[];
+}
+
+interface AndroidActivity extends AndroidManifestNode {
+  'intent-filter'?: AndroidIntentFilter[];
+}
+
+interface AndroidApplication {
+  activity?: AndroidActivity[];
+}
+
+interface AndroidManifest {
+  'uses-permission'?: AndroidManifestNode[];
+  application?: AndroidApplication[];
+}
+
 const withReactNativeFastVideo: ConfigPlugin<ReactNativeFastVideoPluginOptions | void> = (
   config,
   rawOptions
@@ -18,7 +39,7 @@ const withReactNativeFastVideo: ConfigPlugin<ReactNativeFastVideoPluginOptions |
   const backgroundPlayback = options.backgroundPlayback ?? false;
 
   config = withAndroidManifest(config, (androidConfig) => {
-    const manifest = androidConfig.modResults.manifest as any;
+    const manifest = androidConfig.modResults.manifest as AndroidManifest;
     manifest['uses-permission'] ??= [];
     addPermission(manifest['uses-permission'], 'android.permission.INTERNET');
 

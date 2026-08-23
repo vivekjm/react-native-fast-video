@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <iostream>
 #include <limits>
 #include <string>
 
@@ -25,7 +26,10 @@ void require_finite_json(const std::string& json) {
 }
 
 void require_contains(const std::string& value, const char* needle) {
-  assert(value.find(needle) != std::string::npos);
+  if (value.find(needle) == std::string::npos) {
+    std::cerr << "Expected " << value << " to contain " << needle << '\n';
+    std::abort();
+  }
 }
 
 }  // namespace
@@ -51,7 +55,7 @@ int main() {
   require_finite_json(snapshot);
   require_contains(snapshot, "\"qoeScore\"");
   require_contains(snapshot, "\"predictedBandwidthBps\"");
-  require_contains(snapshot, "\"frameProcessingSampleCount\"");
+  require_contains(snapshot, "\"frameProcessingSamples\"");
 
   // Predictions must remain bounded even with impossible indices and velocity values.
   std::string viewport = owned_string(
@@ -66,7 +70,7 @@ int main() {
       rnfv_cdn_health_json(nan, infinity, -1.0, infinity,
                            std::numeric_limits<std::int32_t>::max()));
   require_finite_json(cdn);
-  require_contains(cdn, "\"healthScore\"");
+  require_contains(cdn, "\"score\"");
 
   std::string adaptive = owned_string(rnfv_adaptive_decision_json(
       infinity, nan, infinity, std::numeric_limits<std::int32_t>::max(),
