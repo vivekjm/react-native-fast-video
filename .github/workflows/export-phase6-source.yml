@@ -5,6 +5,8 @@ on:
     branches: [feat/phase6-end-to-end]
     paths:
       - '.github/workflows/export-phase6-source.yml'
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
