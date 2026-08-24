@@ -1,0 +1,25 @@
+name: Export Phase 6 source
+
+on:
+  push:
+    branches: [feat/phase6-end-to-end]
+    paths:
+      - '.github/workflows/export-phase6-source.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Create source archive
+        run: git archive --format=zip --output=react-native-fast-video-phase6-source.zip HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: react-native-fast-video-phase6-source
+          path: react-native-fast-video-phase6-source.zip
+          if-no-files-found: error
+          retention-days: 1
