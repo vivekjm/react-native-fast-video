@@ -1,0 +1,27 @@
+name: Export Phase 6 source
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export-source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Create deterministic source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          git archive --format=tar --prefix=react-native-fast-video-phase6/ HEAD \
+            | gzip -n > /tmp/react-native-fast-video-phase6-source.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phase6-source
+          path: /tmp/react-native-fast-video-phase6-source.tar.gz
+          if-no-files-found: error
+          retention-days: 1
